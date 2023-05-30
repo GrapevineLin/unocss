@@ -1,9 +1,10 @@
+import { resolve } from 'node:path'
 import type { UserConfig, UserConfigDefaults } from '@unocss/core'
 import type { ResolvedUnpluginOptions, UnpluginOptions } from 'unplugin'
 import { createUnplugin } from 'unplugin'
 import WebpackSources from 'webpack-sources'
 import { createContext } from '../../shared-integration/src/context'
-import { setupExtraContent } from '../../shared-integration/src/extra-content'
+import { extractFile, setupExtraContent } from '../../shared-integration/src/extra-content'
 import { getHash } from '../../shared-integration/src/hash'
 import { HASH_PLACEHOLDER_RE, LAYER_MARK_ALL, LAYER_PLACEHOLDER_RE, RESOLVED_ID_RE, getHashPlaceholder, getLayerPlaceholder, resolveId, resolveLayer } from '../../shared-integration/src/layers'
 import { applyTransformers } from '../../shared-integration/src/transformers'
@@ -53,8 +54,7 @@ export default function WebpackPlugin<Theme extends {}>(
     }
 
     // TODO: detect webpack's watch mode and enable watcher
-    const shouldWatch = ctx.uno.config.extraContent?.enableWatch ?? false
-    tasks.push(setupExtraContent(ctx, shouldWatch))
+    tasks.push(setupExtraContent(ctx))
 
     const entries = new Set<string>()
     const hashes = new Map<string, string>()
@@ -100,6 +100,13 @@ export default function WebpackPlugin<Theme extends {}>(
         const hash = hashes.get(id)
         if (layer)
           return (hash ? getHashPlaceholder(hash) : '') + getLayerPlaceholder(layer)
+      },
+      watchChange(id, change) {
+        const isVueFile = /\.vue(\?.*)?$/i.test(id)
+        if (isVueFile && change.event !== 'delete') {
+          const absolutePath = resolve(ctx.root, id)
+          tasks.push(extractFile(absolutePath, ctx))
+        }
       },
       webpack(compiler) {
         // replace the placeholders
